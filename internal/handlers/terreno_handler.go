@@ -7,7 +7,21 @@ import (
 )
 
 func GetTerrenos(c *fiber.Ctx) error {
-	terrenos, err := repository.GetAllTerrenos()
+	parcelaID := c.Get("X-Parcela-Id")
+	if parcelaID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   true,
+			"message": "Header X-Parcela-Id requerido",
+		})
+	}
+	vendedorID := c.Get("X-User-Id")
+	role := c.Get("X-User-Role")
+	var vID *string
+	if role == "vendedor" && vendedorID != "" {
+		vID = &vendedorID
+	}
+
+	terrenos, err := repository.GetAllTerrenos(parcelaID, vID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   true,
@@ -17,7 +31,33 @@ func GetTerrenos(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"error": false, "data": terrenos})
 }
 
+func GetTerrenoByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   true,
+			"message": "ID requerido",
+		})
+	}
+	terreno, err := repository.GetTerrenoByID(id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   true,
+			"message": "Terreno no encontrado: " + err.Error(),
+		})
+	}
+	return c.JSON(fiber.Map{"error": false, "data": terreno})
+}
+
 func CreateTerreno(c *fiber.Ctx) error {
+	parcelaID := c.Get("X-Parcela-Id")
+	if parcelaID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   true,
+			"message": "Header X-Parcela-Id requerido",
+		})
+	}
+
 	var input models.TerrenoInput
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -25,11 +65,16 @@ func CreateTerreno(c *fiber.Ctx) error {
 			"message": "Datos inválidos: " + err.Error(),
 		})
 	}
+	input.ParcelaID = parcelaID
 	if input.Clave == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   true,
-			"message": "La clave del terreno es requerida",
-		})
+		nextClave, err := repository.GetNextClave(parcelaID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error":   true,
+				"message": "Error al generar clave automática: " + err.Error(),
+			})
+		}
+		input.Clave = nextClave
 	}
 	if input.Estado == "" {
 		input.Estado = "Disponible"
@@ -53,6 +98,13 @@ func UpdateTerreno(c *fiber.Ctx) error {
 			"message": "ID requerido",
 		})
 	}
+	parcelaID := c.Get("X-Parcela-Id")
+	if parcelaID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   true,
+			"message": "Header X-Parcela-Id requerido",
+		})
+	}
 
 	var input models.TerrenoInput
 	if err := c.BodyParser(&input); err != nil {
@@ -61,6 +113,7 @@ func UpdateTerreno(c *fiber.Ctx) error {
 			"message": "Datos inválidos: " + err.Error(),
 		})
 	}
+	input.ParcelaID = parcelaID
 
 	terreno, err := repository.UpdateTerreno(id, input)
 	if err != nil {

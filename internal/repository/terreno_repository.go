@@ -5,6 +5,9 @@ import (
 
 	"github.com/FerT99/gestor-terrenos-service/internal/database"
 	"github.com/FerT99/gestor-terrenos-service/internal/models"
+	"github.com/jackc/pgx/v5"
+	"fmt"
+	"strconv"
 )
 
 // nullStr convierte un string vacío a nil para campos nullable de la BD
@@ -15,14 +18,55 @@ func nullStr(s string) *string {
 	return &s
 }
 
-func GetAllTerrenos() ([]models.Terreno, error) {
+func GetNextClave(parcelaID string) (string, error) {
 	query := `
-		SELECT id, clave, nombre, fase, superficie_m2, precio_lista,
-		       propietario, estado, coordenadas, notas, created_at
+		SELECT clave
 		FROM terrenos
+		WHERE parcela_id = $1 AND clave ~ '^T[0-9]+$'
+		ORDER BY CAST(SUBSTRING(clave FROM 2) AS INTEGER) DESC
+		LIMIT 1
+	`
+	var maxClave string
+	err := database.DB.QueryRow(context.Background(), query, parcelaID).Scan(&maxClave)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "T1", nil
+		}
+		return "", err
+	}
+
+	numStr := maxClave[1:]
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return "T1", nil // fallback en caso extraño
+	}
+
+	return fmt.Sprintf("T%d", num+1), nil
+}
+
+func GetAllTerrenos(parcelaID string, vendedorID *string) ([]models.Terreno, error) {
+	query := `
+		SELECT id, parcela_id, clave, nombre, fase, superficie_m2, precio_lista,
+		       propietario, estado, coordenadas, notas, vendedor_id, created_at
+		FROM terrenos
+		WHERE parcela_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := database.DB.Query(context.Background(), query)
+	var rows pgx.Rows
+	var err error
+	if vendedorID != nil {
+		query = `
+			SELECT id, parcela_id, clave, nombre, fase, superficie_m2, precio_lista,
+			       propietario, estado, coordenadas, notas, vendedor_id, created_at
+			FROM terrenos
+			WHERE parcela_id = $1 AND vendedor_id = $2
+			ORDER BY created_at DESC
+		`
+		rows, err = database.DB.Query(context.Background(), query, parcelaID, *vendedorID)
+	} else {
+		rows, err = database.DB.Query(context.Background(), query, parcelaID)
+	}
+	
 	if err != nil {
 		return nil, err
 	}
@@ -32,10 +76,10 @@ func GetAllTerrenos() ([]models.Terreno, error) {
 	for rows.Next() {
 		var t models.Terreno
 		err := rows.Scan(
-			&t.ID, &t.Clave, &t.Nombre, &t.Fase,
+			&t.ID, &t.ParcelaID, &t.Clave, &t.Nombre, &t.Fase,
 			&t.SuperficieM2, &t.PrecioLista,
 			&t.Propietario, &t.Estado, &t.Coordenadas,
-			&t.Notas, &t.CreatedAt,
+			&t.Notas, &t.VendedorID, &t.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -51,16 +95,34 @@ func GetAllTerrenos() ([]models.Terreno, error) {
 	return terrenos, nil
 }
 
+func GetTerrenoByID(id string) (models.Terreno, error) {
+	query := `
+		SELECT id, parcela_id, clave, nombre, fase, superficie_m2, precio_lista,
+		       propietario, estado, coordenadas, notas, vendedor_id, created_at
+		FROM terrenos
+		WHERE id = $1
+	`
+	var t models.Terreno
+	err := database.DB.QueryRow(context.Background(), query, id).Scan(
+		&t.ID, &t.ParcelaID, &t.Clave, &t.Nombre, &t.Fase,
+		&t.SuperficieM2, &t.PrecioLista,
+		&t.Propietario, &t.Estado, &t.Coordenadas,
+		&t.Notas, &t.VendedorID, &t.CreatedAt,
+	)
+	return t, err
+}
+
 func CreateTerreno(input models.TerrenoInput) (models.Terreno, error) {
 	query := `
 		INSERT INTO terrenos
-		  (clave, nombre, fase, superficie_m2, precio_lista, propietario, estado, coordenadas, notas)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-		RETURNING id, clave, nombre, fase, superficie_m2, precio_lista,
-		          propietario, estado, coordenadas, notas, created_at
+		  (parcela_id, clave, nombre, fase, superficie_m2, precio_lista, propietario, estado, coordenadas, notas, vendedor_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		RETURNING id, parcela_id, clave, nombre, fase, superficie_m2, precio_lista,
+		          propietario, estado, coordenadas, notas, vendedor_id, created_at
 	`
 	var t models.Terreno
 	err := database.DB.QueryRow(context.Background(), query,
+		input.ParcelaID,
 		input.Clave,
 		nullStr(input.Nombre),
 		nullStr(input.Fase),
@@ -70,11 +132,17 @@ func CreateTerreno(input models.TerrenoInput) (models.Terreno, error) {
 		input.Estado,
 		nullStr(input.Coordenadas),
 		nullStr(input.Notas),
+		nullStr(func() string {
+			if input.VendedorID != nil {
+				return *input.VendedorID
+			}
+			return ""
+		}()),
 	).Scan(
-		&t.ID, &t.Clave, &t.Nombre, &t.Fase,
+		&t.ID, &t.ParcelaID, &t.Clave, &t.Nombre, &t.Fase,
 		&t.SuperficieM2, &t.PrecioLista,
 		&t.Propietario, &t.Estado, &t.Coordenadas,
-		&t.Notas, &t.CreatedAt,
+		&t.Notas, &t.VendedorID, &t.CreatedAt,
 	)
 	return t, err
 }
@@ -82,14 +150,15 @@ func CreateTerreno(input models.TerrenoInput) (models.Terreno, error) {
 func UpdateTerreno(id string, input models.TerrenoInput) (models.Terreno, error) {
 	query := `
 		UPDATE terrenos
-		SET clave=$1, nombre=$2, fase=$3, superficie_m2=$4, precio_lista=$5,
-		    propietario=$6, estado=$7, coordenadas=$8, notas=$9
-		WHERE id=$10
-		RETURNING id, clave, nombre, fase, superficie_m2, precio_lista,
-		          propietario, estado, coordenadas, notas, created_at
+		SET parcela_id=$1, clave=$2, nombre=$3, fase=$4, superficie_m2=$5, precio_lista=$6,
+		    propietario=$7, estado=$8, coordenadas=$9, notas=$10, vendedor_id=$11
+		WHERE id=$12
+		RETURNING id, parcela_id, clave, nombre, fase, superficie_m2, precio_lista,
+		          propietario, estado, coordenadas, notas, vendedor_id, created_at
 	`
 	var t models.Terreno
 	err := database.DB.QueryRow(context.Background(), query,
+		input.ParcelaID,
 		input.Clave,
 		nullStr(input.Nombre),
 		nullStr(input.Fase),
@@ -99,12 +168,18 @@ func UpdateTerreno(id string, input models.TerrenoInput) (models.Terreno, error)
 		input.Estado,
 		nullStr(input.Coordenadas),
 		nullStr(input.Notas),
+		nullStr(func() string {
+			if input.VendedorID != nil {
+				return *input.VendedorID
+			}
+			return ""
+		}()),
 		id,
 	).Scan(
-		&t.ID, &t.Clave, &t.Nombre, &t.Fase,
+		&t.ID, &t.ParcelaID, &t.Clave, &t.Nombre, &t.Fase,
 		&t.SuperficieM2, &t.PrecioLista,
 		&t.Propietario, &t.Estado, &t.Coordenadas,
-		&t.Notas, &t.CreatedAt,
+		&t.Notas, &t.VendedorID, &t.CreatedAt,
 	)
 	return t, err
 }
