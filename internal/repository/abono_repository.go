@@ -63,11 +63,15 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 
 	// 3. Registrar el Abono
 	queryAbono := `
-		INSERT INTO abonos (parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, notas)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO abonos (parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, comprobante_url, notas)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, comprobante_url, notas, created_at
 	`
 	var abono models.Abono
+	var compURL *string
+	if input.ComprobanteURL != "" {
+		compURL = &input.ComprobanteURL
+	}
 	err = tx.QueryRow(
 		context.Background(),
 		queryAbono,
@@ -78,6 +82,7 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 		input.Moneda,
 		fechaPago,
 		input.MetodoPago,
+		compURL,
 		input.Notas,
 	).Scan(
 		&abono.ID, &abono.ParcelaID, &abono.PeriodoPagoID, &abono.NumeroAbono, &abono.MontoPagado, 
@@ -125,10 +130,18 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 
 func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 	query := `
-		SELECT id, parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, comprobante_url, notas, created_at 
-		FROM abonos 
-		WHERE periodo_pago_id = $1 
-		ORDER BY created_at DESC
+		SELECT 
+			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
+			COALESCE(t.clave, '') as terreno_clave,
+			COALESCE(t.nombre, '') as terreno_nombre,
+			COALESCE(c.nombre_completo, '') as cliente_nombre
+		FROM abonos a
+		LEFT JOIN periodos_pago pp ON a.periodo_pago_id = pp.id
+		LEFT JOIN planes_pago plan ON pp.plan_id = plan.id
+		LEFT JOIN terrenos t ON plan.terreno_id = t.id
+		LEFT JOIN clientes c ON plan.cliente_id = c.id
+		WHERE a.periodo_pago_id = $1 
+		ORDER BY a.created_at DESC
 	`
 	rows, err := database.DB.Query(context.Background(), query, periodoID)
 	if err != nil {
@@ -142,6 +155,7 @@ func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 		if err := rows.Scan(
 			&a.ID, &a.ParcelaID, &a.PeriodoPagoID, &a.NumeroAbono, &a.MontoPagado, 
 			&a.Moneda, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
+			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre,
 		); err != nil {
 			return nil, err
 		}
@@ -152,10 +166,18 @@ func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 
 func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 	query := `
-		SELECT id, parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, comprobante_url, notas, created_at 
-		FROM abonos 
-		WHERE parcela_id = $1 
-		ORDER BY created_at DESC
+		SELECT 
+			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
+			COALESCE(t.clave, '') as terreno_clave,
+			COALESCE(t.nombre, '') as terreno_nombre,
+			COALESCE(c.nombre_completo, '') as cliente_nombre
+		FROM abonos a
+		LEFT JOIN periodos_pago pp ON a.periodo_pago_id = pp.id
+		LEFT JOIN planes_pago plan ON pp.plan_id = plan.id
+		LEFT JOIN terrenos t ON plan.terreno_id = t.id
+		LEFT JOIN clientes c ON plan.cliente_id = c.id
+		WHERE a.parcela_id = $1 
+		ORDER BY a.created_at DESC
 		LIMIT 50
 	`
 	rows, err := database.DB.Query(context.Background(), query, parcelaID)
@@ -170,6 +192,7 @@ func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 		if err := rows.Scan(
 			&a.ID, &a.ParcelaID, &a.PeriodoPagoID, &a.NumeroAbono, &a.MontoPagado, 
 			&a.Moneda, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
+			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre,
 		); err != nil {
 			return nil, err
 		}

@@ -27,7 +27,7 @@ func main() {
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Parcela-Id",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Parcela-Id, X-User-Id, X-User-Role",
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 	}))
 
@@ -41,6 +41,7 @@ func main() {
 	// Usuarios / Auth
 	api.Get("/usuarios", handlers.GetUsuarios)
 	api.Post("/usuarios", handlers.CreateOrUpdateUsuario)
+	api.Post("/usuarios/vendedores", handlers.RegisterVendedor)
 	api.Get("/usuarios/me", handlers.GetMe)
 
 	// CRUD parcelas

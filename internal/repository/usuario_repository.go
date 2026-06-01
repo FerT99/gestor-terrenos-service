@@ -9,9 +9,9 @@ import (
 
 func GetAllUsuarios() ([]models.Usuario, error) {
 	query := `
-		SELECT id, email, nombre_completo, rol, created_at
+		SELECT id, email, nombre, rol, created_at
 		FROM usuarios
-		ORDER BY nombre_completo ASC
+		ORDER BY nombre ASC
 	`
 	rows, err := database.DB.Query(context.Background(), query)
 	if err != nil {
@@ -38,13 +38,13 @@ func GetAllUsuarios() ([]models.Usuario, error) {
 
 func CreateOrUpdateUsuario(input models.UsuarioInput) (models.Usuario, error) {
 	query := `
-		INSERT INTO usuarios (id, email, nombre_completo, rol)
+		INSERT INTO usuarios (id, email, nombre, rol)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE 
 		SET email = EXCLUDED.email, 
-		    nombre_completo = EXCLUDED.nombre_completo,
+		    nombre = EXCLUDED.nombre,
 		    rol = EXCLUDED.rol
-		RETURNING id, email, nombre_completo, rol, created_at
+		RETURNING id, email, nombre, rol, created_at
 	`
 	var u models.Usuario
 	err := database.DB.QueryRow(context.Background(), query,
@@ -56,7 +56,7 @@ func CreateOrUpdateUsuario(input models.UsuarioInput) (models.Usuario, error) {
 
 func GetUsuarioByID(id string) (models.Usuario, error) {
 	query := `
-		SELECT id, email, nombre_completo, rol, created_at
+		SELECT id, email, nombre, rol, created_at
 		FROM usuarios
 		WHERE id = $1
 	`

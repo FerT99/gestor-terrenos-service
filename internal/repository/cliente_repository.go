@@ -122,6 +122,57 @@ func UpdateCliente(id string, input models.ClienteInput) (models.Cliente, error)
 }
 
 func DeleteCliente(id string) error {
-	_, err := database.DB.Exec(context.Background(), `DELETE FROM clientes WHERE id = $1`, id)
-	return err
+	tx, err := database.DB.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+
+	// 1. Liberar terrenos (poner estado = 'disponible', propietario = NULL)
+	_, err = tx.Exec(context.Background(), `
+		UPDATE terrenos 
+		SET estado = 'disponible', propietario = NULL 
+		WHERE id IN (SELECT terreno_id FROM planes_pago WHERE cliente_id = $1)
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 2. Eliminar abonos asociados
+	_, err = tx.Exec(context.Background(), `
+		DELETE FROM abonos 
+		WHERE periodo_pago_id IN (
+			SELECT id FROM periodos_pago WHERE plan_id IN (
+				SELECT id FROM planes_pago WHERE cliente_id = $1
+			)
+		)
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 3. Eliminar periodos_pago
+	_, err = tx.Exec(context.Background(), `
+		DELETE FROM periodos_pago 
+		WHERE plan_id IN (SELECT id FROM planes_pago WHERE cliente_id = $1)
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 4. Eliminar planes_pago
+	_, err = tx.Exec(context.Background(), `
+		DELETE FROM planes_pago WHERE cliente_id = $1
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 5. Eliminar el cliente
+	_, err = tx.Exec(context.Background(), `DELETE FROM clientes WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(context.Background())
 }

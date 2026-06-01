@@ -16,6 +16,9 @@ type Abono struct {
 	ComprobanteURL  *string        `json:"comprobante_url"`
 	Notas           *string        `json:"notas"`
 	CreatedAt       time.Time      `json:"created_at"`
+	TerrenoClave    string         `json:"terreno_clave,omitempty"`
+	TerrenoNombre   string         `json:"terreno_nombre,omitempty"`
+	ClienteNombre   string         `json:"cliente_nombre,omitempty"`
 }
 
 type AbonoInput struct {
@@ -24,6 +27,7 @@ type AbonoInput struct {
 	Moneda        string  `json:"moneda"`
 	FechaPago     string  `json:"fecha_pago"`
 	MetodoPago    string  `json:"metodo_pago"`
-	Notas         string  `json:"notas"`
-	PerdonarMora  bool    `json:"perdonar_mora"`
+	Notas          string  `json:"notas"`
+	PerdonarMora   bool    `json:"perdonar_mora"`
+	ComprobanteURL string  `json:"comprobante_url"`
 }

@@ -34,6 +34,7 @@ func GetClientesMorosos(parcelaID string) ([]ClienteMoroso, error) {
 		WHERE pl.parcela_id = $1 
 		  AND p.estado = 'pendiente' 
 		  AND p.fecha_vencimiento < CURRENT_DATE
+		  AND t.estado != 'disponible'
 		ORDER BY dias_retraso DESC
 	`
 	
