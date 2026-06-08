@@ -28,7 +28,7 @@ func main() {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Parcela-Id, X-User-Id, X-User-Role",
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}))
 
 	// Grupo de rutas protegidas con JWT
@@ -74,6 +74,7 @@ func main() {
 	api.Post("/abonos", handlers.CreateAbono)
 	api.Get("/abonos", handlers.GetAllAbonos)
 	api.Get("/periodos/:periodo_id/abonos", handlers.GetAbonos)
+	api.Patch("/abonos/:id/comprobante", handlers.UpdateAbonoComprobante)
 
 	// Reportes
 	api.Get("/reportes/morosos", handlers.GetClientesMorosos)

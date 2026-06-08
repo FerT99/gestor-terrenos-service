@@ -98,3 +98,33 @@ func GetAllAbonos(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"error": false, "data": abonos})
 }
+
+func UpdateAbonoComprobante(c *fiber.Ctx) error {
+	abonoID := c.Params("id")
+	if abonoID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   true,
+			"message": "ID de abono requerido",
+		})
+	}
+
+	var input struct {
+		ComprobanteURL string `json:"comprobante_url"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   true,
+			"message": "Datos inválidos: " + err.Error(),
+		})
+	}
+
+	err := repository.UpdateAbonoComprobante(abonoID, input.ComprobanteURL)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   true,
+			"message": "Error al actualizar comprobante: " + err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{"error": false, "message": "Comprobante actualizado correctamente"})
+}

@@ -48,9 +48,14 @@ func CreatePlanPago(input models.PlanPagoInput) (models.PlanPago, error) {
 		return models.PlanPago{}, err
 	}
 
-	// Update terreno status to "vendido" and set propietario
-	queryUpdateTerreno := `UPDATE terrenos SET estado = 'vendido', propietario = $2 WHERE id = $1`
-	_, err = tx.Exec(context.Background(), queryUpdateTerreno, input.TerrenoID, nombreCliente)
+	// Update terreno status
+	// If the enganche covers the entire property (cash sale), mark it as vendido directly.
+	nuevoEstado := "apartado"
+	if input.Enganche >= input.MontoTotal {
+		nuevoEstado = "vendido"
+	}
+	queryUpdateTerreno := `UPDATE terrenos SET estado = $3, propietario = $2 WHERE id = $1`
+	_, err = tx.Exec(context.Background(), queryUpdateTerreno, input.TerrenoID, nombreCliente, nuevoEstado)
 	if err != nil {
 		return models.PlanPago{}, err
 	}

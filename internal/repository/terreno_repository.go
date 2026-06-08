@@ -185,7 +185,47 @@ func UpdateTerreno(id string, input models.TerrenoInput) (models.Terreno, error)
 }
 
 func DeleteTerreno(id string) error {
-	_, err := database.DB.Exec(context.Background(),
-		`DELETE FROM terrenos WHERE id = $1`, id)
-	return err
+	tx, err := database.DB.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+
+	// 1. Eliminar abonos asociados a los planes de pago de este terreno
+	_, err = tx.Exec(context.Background(), `
+		DELETE FROM abonos 
+		WHERE periodo_pago_id IN (
+			SELECT id FROM periodos_pago WHERE plan_id IN (
+				SELECT id FROM planes_pago WHERE terreno_id = $1
+			)
+		)
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 2. Eliminar periodos_pago
+	_, err = tx.Exec(context.Background(), `
+		DELETE FROM periodos_pago 
+		WHERE plan_id IN (SELECT id FROM planes_pago WHERE terreno_id = $1)
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 3. Eliminar planes_pago
+	_, err = tx.Exec(context.Background(), `
+		DELETE FROM planes_pago WHERE terreno_id = $1
+	`, id)
+	if err != nil {
+		return err
+	}
+
+	// 4. Eliminar el terreno
+	_, err = tx.Exec(context.Background(), `DELETE FROM terrenos WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(context.Background())
 }

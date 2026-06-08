@@ -113,7 +113,7 @@ func main() {
 		var terreno models.Terreno
 		var terrenoID string
 		err = database.DB.QueryRow(context.Background(), "SELECT id FROM terrenos WHERE clave = $1 LIMIT 1", claveTerreno).Scan(&terrenoID)
-		
+
 		if err != nil {
 			// No existe, crearlo
 			terreno, err = repository.CreateTerreno(models.TerrenoInput{
@@ -135,7 +135,7 @@ func main() {
 			_, err = database.DB.Exec(context.Background(), `
 				UPDATE terrenos 
 				SET superficie_m2 = $1, precio_lista = $2, precio = $3, propietario = $4, estado = 'vendido' 
-				WHERE id = $5`, 
+				WHERE id = $5`,
 				m2, valorTotal, valorTotal, clienteNombre, terrenoID)
 			if err != nil {
 				log.Printf("Error actualizando terreno %s: %v", claveTerreno, err)
@@ -144,12 +144,13 @@ func main() {
 			terreno.ID = terrenoID
 		}
 
-		// C. Crear Plan de Pago (sin plazos inicialmente, o calculados por los abonos)
-		plazos := 0
-		for j := ColAbonosInicio; j < len(row); j++ {
-			if strings.TrimSpace(row[j]) != "" {
-				plazos++
-			}
+		// C. Calcular plazos fijos
+		// Nos indicaron que TODOS los terrenos se dividen entre 40 abonos (plazos = 40)
+		plazos := 40
+
+		maxCol := len(row)
+		if maxCol > 46 {
+			maxCol = 46 // Solo leer hasta Abono 40 (índice 45)
 		}
 
 		plan, err := repository.CreatePlanPago(models.PlanPagoInput{
@@ -168,10 +169,20 @@ func main() {
 		}
 
 		// D. Registrar Abonos
+		// Obtener la fila de fechas (que siempre está debajo de la fila del cliente)
+		var fechasRow []string
+		if i+1 < len(records) {
+			nextRow := records[i+1]
+			// Confirmamos que es una fila de fechas si el nombre del cliente está vacío
+			if len(nextRow) > ColCliente && strings.TrimSpace(nextRow[ColCliente]) == "" {
+				fechasRow = nextRow
+			}
+		}
+
 		periodos, _ := repository.GetPeriodosByPlan(plan.ID)
 
 		abonoIndex := 0
-		for j := ColAbonosInicio; j < len(row); j++ {
+		for j := ColAbonosInicio; j < maxCol; j++ {
 			abonoStr := strings.TrimSpace(row[j])
 			if abonoStr == "" {
 				continue
@@ -180,17 +191,29 @@ func main() {
 			// Limpiar formato moneda
 			abonoStr = strings.ReplaceAll(abonoStr, "$", "")
 			abonoStr = strings.ReplaceAll(abonoStr, ".", "")
+			abonoStr = strings.ReplaceAll(abonoStr, ",", ".")
 			montoAbono, _ := strconv.ParseFloat(abonoStr, 64)
 
 			if montoAbono > 0 && abonoIndex < len(periodos) {
 				periodoActual := periodos[abonoIndex]
 
+				// Determinar la fecha real del abono (de la fila de abajo)
+				fechaPagoStr := fechaInicio.AddDate(0, abonoIndex, 0).Format("2006-01-02") // Fallback a simulada
+				if len(fechasRow) > j {
+					fStr := strings.TrimSpace(fechasRow[j])
+					if fStr != "" {
+						if t, err := time.Parse("02/01/06", fStr); err == nil {
+							fechaPagoStr = t.Format("2006-01-02")
+						}
+					}
+				}
+
 				// Crear el abono
 				_, err = repository.CreateAbono(parcelaID, models.AbonoInput{
 					PeriodoPagoID: periodoActual.ID,
 					MontoPagado:   montoAbono,
-					FechaPago:     fechaInicio.AddDate(0, abonoIndex, 0).Format("2006-01-02"), // Fecha simulada
-					MetodoPago:    "Transferencia (Importación)",
+					FechaPago:     fechaPagoStr,
+					MetodoPago:    "transferencia",
 					Moneda:        "MXN",
 				})
 

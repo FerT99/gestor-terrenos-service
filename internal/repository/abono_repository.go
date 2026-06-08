@@ -102,12 +102,8 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 	}
 
 	nuevoEstado := "pendiente"
-	montoTotalRequerido := periodo.MontoEsperado + moraAplicada
-
-	if totalPagado >= montoTotalRequerido {
+	if totalPagado > 0 {
 		nuevoEstado = "pagado"
-	} else if totalPagado > 0 {
-		nuevoEstado = "parcial"
 	}
 
 	queryUpdatePeriodo := `
@@ -118,6 +114,25 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 	_, err = tx.Exec(context.Background(), queryUpdatePeriodo, nuevoEstado, moraAplicada, input.PeriodoPagoID)
 	if err != nil {
 		return models.Abono{}, err
+	}
+
+	// 5. Upgrade terrain to "vendido" if they have more than 1 abono
+	var abonosCount int
+	queryCount := `
+		SELECT COUNT(*) 
+		FROM abonos a
+		JOIN periodos_pago pp ON a.periodo_pago_id = pp.id
+		WHERE pp.plan_id = $1
+	`
+	err = tx.QueryRow(context.Background(), queryCount, periodo.PlanID).Scan(&abonosCount)
+	if err == nil && abonosCount > 1 {
+		queryUpgradeTerreno := `
+			UPDATE terrenos t
+			SET estado = 'vendido'
+			FROM planes_pago p
+			WHERE p.id = $1 AND p.terreno_id = t.id AND t.estado = 'apartado'
+		`
+		tx.Exec(context.Background(), queryUpgradeTerreno, periodo.PlanID)
 	}
 
 	err = tx.Commit(context.Background())
@@ -177,8 +192,7 @@ func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 		LEFT JOIN terrenos t ON plan.terreno_id = t.id
 		LEFT JOIN clientes c ON plan.cliente_id = c.id
 		WHERE a.parcela_id = $1 
-		ORDER BY a.created_at DESC
-		LIMIT 50
+		ORDER BY a.fecha_pago DESC, a.created_at DESC
 	`
 	rows, err := database.DB.Query(context.Background(), query, parcelaID)
 	if err != nil {
@@ -199,4 +213,14 @@ func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 		abonos = append(abonos, a)
 	}
 	return abonos, nil
+}
+
+func UpdateAbonoComprobante(abonoID string, comprobanteURL string) error {
+	query := `
+		UPDATE abonos
+		SET comprobante_url = $1
+		WHERE id = $2
+	`
+	_, err := database.DB.Exec(context.Background(), query, comprobanteURL, abonoID)
+	return err
 }
