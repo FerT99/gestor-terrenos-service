@@ -1,5 +1,5 @@
 # Etapa de construcción (Builder)
-FROM golang:1.21-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Habilitar CGO puede ser necesario si usas ciertos drivers de db, pero para pgx puro no suele ser necesario.
 # Por si acaso, usamos alpine con certificados actualizados.
