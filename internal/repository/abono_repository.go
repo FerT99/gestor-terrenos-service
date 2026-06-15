@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/FerT99/gestor-terrenos-service/internal/database"
 	"github.com/FerT99/gestor-terrenos-service/internal/models"
@@ -31,21 +30,8 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 		return models.Abono{}, errors.New("este periodo ya está pagado")
 	}
 
-	// 2. Calcular Mora si la fecha de pago es mayor a la de vencimiento
-	fechaPago, err := time.Parse("2006-01-02", input.FechaPago)
-	if err != nil {
-		return models.Abono{}, errors.New("fecha de pago inválida")
-	}
-
-	moraAplicada := 0.0
-	// Considerar mora si pasó al menos 1 día de la fecha de vencimiento
-	// truncated to day
-	fPagoTrunc := time.Date(fechaPago.Year(), fechaPago.Month(), fechaPago.Day(), 0, 0, 0, 0, time.UTC)
-	fVencTrunc := time.Date(periodo.FechaVencimiento.Year(), periodo.FechaVencimiento.Month(), periodo.FechaVencimiento.Day(), 0, 0, 0, 0, time.UTC)
-
-	if fPagoTrunc.After(fVencTrunc) && !input.PerdonarMora {
-		moraAplicada = periodo.MontoEsperado * 0.15
-	}
+	// 2. Mora manual provista desde el frontend
+	moraAplicada := input.MoraAplicada
 
 	// 2.5 Obtener el siguiente numero_abono
 	var maxAbono *int
@@ -63,14 +49,18 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 
 	// 3. Registrar el Abono
 	queryAbono := `
-		INSERT INTO abonos (parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, comprobante_url, notas)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, fecha_pago, metodo_pago, comprobante_url, notas, created_at
+		INSERT INTO abonos (parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, tipo_cambio, fecha_pago, metodo_pago, comprobante_url, notas)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, tipo_cambio, fecha_pago, metodo_pago, comprobante_url, notas, created_at
 	`
 	var abono models.Abono
 	var compURL *string
 	if input.ComprobanteURL != "" {
 		compURL = &input.ComprobanteURL
+	}
+	var tipoCambio *float64
+	if input.TipoCambio > 0 {
+		tipoCambio = &input.TipoCambio
 	}
 	err = tx.QueryRow(
 		context.Background(),
@@ -80,13 +70,14 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 		numeroAbono,
 		input.MontoPagado,
 		input.Moneda,
-		fechaPago,
+		tipoCambio,
+		input.FechaPago,
 		input.MetodoPago,
 		compURL,
 		input.Notas,
 	).Scan(
 		&abono.ID, &abono.ParcelaID, &abono.PeriodoPagoID, &abono.NumeroAbono, &abono.MontoPagado, 
-		&abono.Moneda, &abono.FechaPago, &abono.MetodoPago, &abono.ComprobanteURL, &abono.Notas, &abono.CreatedAt,
+		&abono.Moneda, &abono.TipoCambio, &abono.FechaPago, &abono.MetodoPago, &abono.ComprobanteURL, &abono.Notas, &abono.CreatedAt,
 	)
 	if err != nil {
 		return models.Abono{}, err
@@ -146,7 +137,7 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 	query := `
 		SELECT 
-			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
+			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.tipo_cambio, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
 			COALESCE(t.clave, '') as terreno_clave,
 			COALESCE(t.nombre, '') as terreno_nombre,
 			COALESCE(c.nombre_completo, '') as cliente_nombre
@@ -169,7 +160,7 @@ func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 		var a models.Abono
 		if err := rows.Scan(
 			&a.ID, &a.ParcelaID, &a.PeriodoPagoID, &a.NumeroAbono, &a.MontoPagado, 
-			&a.Moneda, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
+			&a.Moneda, &a.TipoCambio, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
 			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre,
 		); err != nil {
 			return nil, err
@@ -182,7 +173,7 @@ func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 	query := `
 		SELECT 
-			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
+			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.tipo_cambio, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
 			COALESCE(t.clave, '') as terreno_clave,
 			COALESCE(t.nombre, '') as terreno_nombre,
 			COALESCE(c.nombre_completo, '') as cliente_nombre
@@ -205,7 +196,7 @@ func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 		var a models.Abono
 		if err := rows.Scan(
 			&a.ID, &a.ParcelaID, &a.PeriodoPagoID, &a.NumeroAbono, &a.MontoPagado, 
-			&a.Moneda, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
+			&a.Moneda, &a.TipoCambio, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
 			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre,
 		); err != nil {
 			return nil, err

@@ -79,6 +79,12 @@ func main() {
 	// Reportes
 	api.Get("/reportes/morosos", handlers.GetClientesMorosos)
 
+	// Egresos
+	api.Get("/parcelas/:parcela_id/egresos", handlers.GetEgresosByParcela)
+	api.Post("/parcelas/:parcela_id/egresos", handlers.CreateEgreso)
+	api.Put("/parcelas/:parcela_id/egresos/:id", handlers.UpdateEgreso)
+	api.Delete("/parcelas/:parcela_id/egresos/:id", handlers.DeleteEgreso)
+
 	// Historial de Actividad
 	api.Get("/audit-logs", handlers.GetAuditLogs)
 

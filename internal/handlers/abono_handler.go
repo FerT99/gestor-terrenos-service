@@ -39,8 +39,8 @@ func CreateAbono(c *fiber.Ctx) error {
 	}
 
 	accion := "CREAR_ABONO"
-	if input.PerdonarMora {
-		accion = "CREAR_ABONO_MORA_CONDONADA"
+	if input.MoraAplicada > 0 {
+		accion = "CREAR_ABONO_CON_MORA"
 	}
 
 	go repository.LogAction(models.AuditLogInput{
@@ -52,7 +52,7 @@ func CreateAbono(c *fiber.Ctx) error {
 			"monto_pagado":  abono.MontoPagado,
 			"moneda":        abono.Moneda,
 			"metodo_pago":   input.MetodoPago,
-			"perdonar_mora": input.PerdonarMora,
+			"mora_aplicada": input.MoraAplicada,
 		},
 	})
 

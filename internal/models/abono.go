@@ -11,6 +11,7 @@ type Abono struct {
 	NumeroAbono     int            `json:"numero_abono"`
 	MontoPagado     float64        `json:"monto_pagado"`
 	Moneda          string         `json:"moneda"`
+	TipoCambio      *float64       `json:"tipo_cambio,omitempty"`
 	FechaPago       time.Time      `json:"fecha_pago"`
 	MetodoPago      *string        `json:"metodo_pago"`
 	ComprobanteURL  *string        `json:"comprobante_url"`
@@ -25,9 +26,10 @@ type AbonoInput struct {
 	PeriodoPagoID string  `json:"periodo_pago_id"`
 	MontoPagado   float64 `json:"monto_pagado"`
 	Moneda        string  `json:"moneda"`
+	TipoCambio    float64 `json:"tipo_cambio,omitempty"`
 	FechaPago     string  `json:"fecha_pago"`
 	MetodoPago    string  `json:"metodo_pago"`
 	Notas          string  `json:"notas"`
-	PerdonarMora   bool    `json:"perdonar_mora"`
+	MoraAplicada   float64 `json:"mora_aplicada"`
 	ComprobanteURL string  `json:"comprobante_url"`
 }

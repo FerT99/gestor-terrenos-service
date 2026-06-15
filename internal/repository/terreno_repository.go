@@ -50,7 +50,7 @@ func GetAllTerrenos(parcelaID string, vendedorID *string) ([]models.Terreno, err
 		       propietario, estado, coordenadas, notas, vendedor_id, created_at
 		FROM terrenos
 		WHERE parcela_id = $1
-		ORDER BY created_at DESC
+		ORDER BY created_at ASC
 	`
 	var rows pgx.Rows
 	var err error
@@ -60,7 +60,7 @@ func GetAllTerrenos(parcelaID string, vendedorID *string) ([]models.Terreno, err
 			       propietario, estado, coordenadas, notas, vendedor_id, created_at
 			FROM terrenos
 			WHERE parcela_id = $1 AND vendedor_id = $2
-			ORDER BY created_at DESC
+			ORDER BY created_at ASC
 		`
 		rows, err = database.DB.Query(context.Background(), query, parcelaID, *vendedorID)
 	} else {

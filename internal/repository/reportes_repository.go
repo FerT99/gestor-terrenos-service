@@ -12,6 +12,7 @@ type ClienteMoroso struct {
 	NombreCompleto   string    `json:"nombre_completo"`
 	Telefono         string    `json:"telefono"`
 	PlanID           string    `json:"plan_id"`
+	TerrenoID        string    `json:"terreno_id"`
 	TerrenoClave     string    `json:"terreno_clave"`
 	PeriodoID        string    `json:"periodo_id"`
 	NumeroPeriodo    int       `json:"numero_periodo"`
@@ -24,7 +25,7 @@ func GetClientesMorosos(parcelaID string) ([]ClienteMoroso, error) {
 	query := `
 		SELECT 
 			c.id, c.nombre_completo, COALESCE(c.telefono, ''), 
-			pl.id as plan_id, t.clave as terreno_clave,
+			pl.id as plan_id, t.id as terreno_id, t.clave as terreno_clave,
 			p.id as periodo_id, p.numero_periodo, p.monto_esperado, p.fecha_vencimiento,
 			CURRENT_DATE - p.fecha_vencimiento as dias_retraso
 		FROM periodos_pago p
@@ -49,7 +50,7 @@ func GetClientesMorosos(parcelaID string) ([]ClienteMoroso, error) {
 		var m ClienteMoroso
 		if err := rows.Scan(
 			&m.ID, &m.NombreCompleto, &m.Telefono, 
-			&m.PlanID, &m.TerrenoClave, &m.PeriodoID, 
+			&m.PlanID, &m.TerrenoID, &m.TerrenoClave, &m.PeriodoID, 
 			&m.NumeroPeriodo, &m.MontoEsperado, &m.FechaVencimiento, &m.DiasRetraso,
 		); err != nil {
 			return nil, err
