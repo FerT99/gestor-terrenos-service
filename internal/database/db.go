@@ -23,7 +23,7 @@ func ConnectDB() {
 	}
 
 	// Supabase Pool settings recommendations
-	config.MaxConns = 10
+	config.MaxConns = 3
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {

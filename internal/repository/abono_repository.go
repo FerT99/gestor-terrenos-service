@@ -126,6 +126,26 @@ func CreateAbono(parcelaID string, input models.AbonoInput) (models.Abono, error
 		tx.Exec(context.Background(), queryUpgradeTerreno, periodo.PlanID)
 	}
 
+	// 6. Registrar comisión de ventas en egresos automáticamente (6.75%)
+	comision := input.MontoPagado * 0.0675
+	queryEgreso := `
+		INSERT INTO egresos (parcela_id, fecha, concepto, monto, categoria, descripcion)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+	_, err = tx.Exec(
+		context.Background(),
+		queryEgreso,
+		parcelaID,
+		input.FechaPago,
+		"Comisión a vendedores (6.75%)",
+		comision,
+		"Comisiones",
+		"Comisión automática del 6.75% sobre el abono/venta registrado",
+	)
+	if err != nil {
+		return models.Abono{}, err
+	}
+
 	err = tx.Commit(context.Background())
 	if err != nil {
 		return models.Abono{}, err
@@ -214,4 +234,94 @@ func UpdateAbonoComprobante(abonoID string, comprobanteURL string) error {
 	`
 	_, err := database.DB.Exec(context.Background(), query, comprobanteURL, abonoID)
 	return err
+}
+
+func UpdateAbono(abonoID string, input models.AbonoInput) (models.Abono, error) {
+	tx, err := database.DB.Begin(context.Background())
+	if err != nil {
+		return models.Abono{}, err
+	}
+	defer tx.Rollback(context.Background())
+
+	queryAbono := `
+		UPDATE abonos
+		SET monto_pagado = $1, moneda = $2, tipo_cambio = $3, fecha_pago = $4, metodo_pago = $5, notas = $6
+		WHERE id = $7
+		RETURNING id, parcela_id, periodo_pago_id, numero_abono, monto_pagado, moneda, tipo_cambio, fecha_pago, metodo_pago, comprobante_url, notas, created_at
+	`
+	var abono models.Abono
+	var tipoCambio *float64
+	if input.TipoCambio > 0 {
+		tipoCambio = &input.TipoCambio
+	}
+	err = tx.QueryRow(
+		context.Background(), queryAbono,
+		input.MontoPagado, input.Moneda, tipoCambio, input.FechaPago, input.MetodoPago, input.Notas, abonoID,
+	).Scan(
+		&abono.ID, &abono.ParcelaID, &abono.PeriodoPagoID, &abono.NumeroAbono, &abono.MontoPagado, 
+		&abono.Moneda, &abono.TipoCambio, &abono.FechaPago, &abono.MetodoPago, &abono.ComprobanteURL, &abono.Notas, &abono.CreatedAt,
+	)
+	if err != nil {
+		return models.Abono{}, err
+	}
+
+	// Actualizar estado del periodo
+	var totalPagado float64
+	queryTotal := `SELECT COALESCE(SUM(monto_pagado), 0) FROM abonos WHERE periodo_pago_id = $1`
+	err = tx.QueryRow(context.Background(), queryTotal, abono.PeriodoPagoID).Scan(&totalPagado)
+	if err != nil {
+		return models.Abono{}, err
+	}
+	nuevoEstado := "pendiente"
+	if totalPagado > 0 {
+		nuevoEstado = "pagado"
+	}
+	queryUpdatePeriodo := `UPDATE periodos_pago SET estado = $1 WHERE id = $2`
+	_, err = tx.Exec(context.Background(), queryUpdatePeriodo, nuevoEstado, abono.PeriodoPagoID)
+	if err != nil {
+		return models.Abono{}, err
+	}
+
+	err = tx.Commit(context.Background())
+	return abono, err
+}
+
+func DeleteAbono(abonoID string) error {
+	tx, err := database.DB.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+
+	var periodoID string
+	queryGet := `SELECT periodo_pago_id FROM abonos WHERE id = $1`
+	err = tx.QueryRow(context.Background(), queryGet, abonoID).Scan(&periodoID)
+	if err != nil {
+		return err
+	}
+
+	queryDel := `DELETE FROM abonos WHERE id = $1`
+	_, err = tx.Exec(context.Background(), queryDel, abonoID)
+	if err != nil {
+		return err
+	}
+
+	var totalPagado float64
+	queryTotal := `SELECT COALESCE(SUM(monto_pagado), 0) FROM abonos WHERE periodo_pago_id = $1`
+	err = tx.QueryRow(context.Background(), queryTotal, periodoID).Scan(&totalPagado)
+	if err != nil {
+		return err
+	}
+
+	nuevoEstado := "pendiente"
+	if totalPagado > 0 {
+		nuevoEstado = "pagado"
+	}
+	queryUpdatePeriodo := `UPDATE periodos_pago SET estado = $1 WHERE id = $2`
+	_, err = tx.Exec(context.Background(), queryUpdatePeriodo, nuevoEstado, periodoID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(context.Background())
 }

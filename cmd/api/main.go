@@ -75,6 +75,8 @@ func main() {
 	api.Get("/abonos", handlers.GetAllAbonos)
 	api.Get("/periodos/:periodo_id/abonos", handlers.GetAbonos)
 	api.Patch("/abonos/:id/comprobante", handlers.UpdateAbonoComprobante)
+	api.Put("/abonos/:id", handlers.UpdateAbono)
+	api.Delete("/abonos/:id", handlers.DeleteAbono)
 
 	// Reportes
 	api.Get("/reportes/morosos", handlers.GetClientesMorosos)

@@ -128,3 +128,45 @@ func UpdateAbonoComprobante(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"error": false, "message": "Comprobante actualizado correctamente"})
 }
+
+func UpdateAbono(c *fiber.Ctx) error {
+	abonoID := c.Params("id")
+	if abonoID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "message": "ID requerido"})
+	}
+	var input models.AbonoInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "message": "Datos inválidos: " + err.Error()})
+	}
+	abono, err := repository.UpdateAbono(abonoID, input)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "message": err.Error()})
+	}
+	go repository.LogAction(models.AuditLogInput{
+		UsuarioNombre: "Administrador",
+		Accion:        "ACTUALIZAR_ABONO",
+		EntidadTipo:   "abonos",
+		EntidadID:     abono.ID,
+		Detalles:      map[string]interface{}{"monto_pagado": abono.MontoPagado},
+	})
+	return c.JSON(fiber.Map{"error": false, "data": abono})
+}
+
+func DeleteAbono(c *fiber.Ctx) error {
+	abonoID := c.Params("id")
+	if abonoID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "message": "ID requerido"})
+	}
+	err := repository.DeleteAbono(abonoID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "message": err.Error()})
+	}
+	go repository.LogAction(models.AuditLogInput{
+		UsuarioNombre: "Administrador",
+		Accion:        "ELIMINAR_ABONO",
+		EntidadTipo:   "abonos",
+		EntidadID:     abonoID,
+		Detalles:      nil,
+	})
+	return c.JSON(fiber.Map{"error": false, "message": "Abono eliminado"})
+}

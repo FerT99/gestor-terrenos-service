@@ -74,10 +74,10 @@ func main() {
 		// Parsear datos
 		m2, _ := strconv.ParseFloat(strings.ReplaceAll(row[ColM2], ",", "."), 64)
 
-		// Limpiar símbolo de dólar y puntos de miles para Valor Total
+		// Limpiar símbolo de dólar y comas de miles para Valor Total (formato US/MX: 160,000.00)
 		valorStr := strings.ReplaceAll(row[ColValorTotal], "$", "")
-		valorStr = strings.ReplaceAll(valorStr, ".", "")
-		valorStr = strings.ReplaceAll(valorStr, ",", ".") // Si los decimales usan coma
+		valorStr = strings.ReplaceAll(valorStr, " ", "")
+		valorStr = strings.ReplaceAll(valorStr, ",", "") // Quitar comas de miles
 		valorTotal, _ := strconv.ParseFloat(strings.TrimSpace(valorStr), 64)
 
 		// Fecha de inicio (Asumiendo formato DD/MM/YY)
@@ -134,9 +134,9 @@ func main() {
 			// Ya existe, actualizarlo (para corregir si en el intento anterior se guardó mal)
 			_, err = database.DB.Exec(context.Background(), `
 				UPDATE terrenos 
-				SET superficie_m2 = $1, precio_lista = $2, precio = $3, propietario = $4, estado = 'vendido' 
-				WHERE id = $5`,
-				m2, valorTotal, valorTotal, clienteNombre, terrenoID)
+				SET superficie_m2 = $1, precio_lista = $2, propietario = $3, estado = 'vendido' 
+				WHERE id = $4`,
+				m2, valorTotal, clienteNombre, terrenoID)
 			if err != nil {
 				log.Printf("Error actualizando terreno %s: %v", claveTerreno, err)
 				continue
@@ -153,19 +153,23 @@ func main() {
 			maxCol = 46 // Solo leer hasta Abono 40 (índice 45)
 		}
 
-		plan, err := repository.CreatePlanPago(models.PlanPagoInput{
-			ParcelaID:   parcelaID,
-			TerrenoID:   terreno.ID,
-			ClienteID:   clienteID,
-			MontoTotal:  valorTotal,
-			Enganche:    0,
-			Plazos:      plazos,
-			TasaInteres: 0,
-			FechaInicio: fechaInicio,
-		})
+		var plan models.PlanPago
+		err = database.DB.QueryRow(context.Background(), "SELECT id FROM planes_pago WHERE terreno_id = $1 LIMIT 1", terreno.ID).Scan(&plan.ID)
 		if err != nil {
-			log.Printf("Error creando plan de pago: %v", err)
-			continue
+			plan, err = repository.CreatePlanPago(models.PlanPagoInput{
+				ParcelaID:   parcelaID,
+				TerrenoID:   terreno.ID,
+				ClienteID:   clienteID,
+				MontoTotal:  valorTotal,
+				Enganche:    0,
+				Plazos:      plazos,
+				TasaInteres: 0,
+				FechaInicio: fechaInicio,
+			})
+			if err != nil {
+				log.Printf("Error creando plan de pago: %v", err)
+				continue
+			}
 		}
 
 		// D. Registrar Abonos
@@ -188,10 +192,10 @@ func main() {
 				continue
 			}
 
-			// Limpiar formato moneda
+			// Limpiar formato moneda (US/MX)
 			abonoStr = strings.ReplaceAll(abonoStr, "$", "")
-			abonoStr = strings.ReplaceAll(abonoStr, ".", "")
-			abonoStr = strings.ReplaceAll(abonoStr, ",", ".")
+			abonoStr = strings.ReplaceAll(abonoStr, " ", "")
+			abonoStr = strings.ReplaceAll(abonoStr, ",", "")
 			montoAbono, _ := strconv.ParseFloat(abonoStr, 64)
 
 			if montoAbono > 0 && abonoIndex < len(periodos) {
@@ -206,6 +210,13 @@ func main() {
 							fechaPagoStr = t.Format("2006-01-02")
 						}
 					}
+				}
+
+				// Solo procesar si la fecha es de Junio o Julio (meses 6 y 7)
+				parsedFecha, _ := time.Parse("2006-01-02", fechaPagoStr)
+				if parsedFecha.Month() != time.June && parsedFecha.Month() != time.July {
+					abonoIndex++
+					continue
 				}
 
 				// Crear el abono
