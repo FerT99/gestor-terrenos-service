@@ -32,8 +32,13 @@ func CreatePlanPago(c *fiber.Ctx) error {
 		})
 	}
 
+	usuarioNombre := c.Get("X-User-Name")
+	if usuarioNombre == "" {
+		usuarioNombre = "Administrador"
+	}
+
 	go repository.LogAction(models.AuditLogInput{
-		UsuarioNombre: "Administrador", // Hardcodeado por ahora
+		UsuarioNombre: usuarioNombre,
 		Accion:        "NUEVA_VENTA",
 		EntidadTipo:   "planes_pago",
 		EntidadID:     plan.ID,

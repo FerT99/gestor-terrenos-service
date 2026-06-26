@@ -43,8 +43,13 @@ func CreateAbono(c *fiber.Ctx) error {
 		accion = "CREAR_ABONO_CON_MORA"
 	}
 
+	usuarioNombre := c.Get("X-User-Name")
+	if usuarioNombre == "" {
+		usuarioNombre = "Administrador"
+	}
+
 	go repository.LogAction(models.AuditLogInput{
-		UsuarioNombre: "Administrador", // Hardcodeado por ahora
+		UsuarioNombre: usuarioNombre,
 		Accion:        accion,
 		EntidadTipo:   "abonos",
 		EntidadID:     abono.ID,
@@ -142,8 +147,13 @@ func UpdateAbono(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "message": err.Error()})
 	}
+	usuarioNombre := c.Get("X-User-Name")
+	if usuarioNombre == "" {
+		usuarioNombre = "Administrador"
+	}
+
 	go repository.LogAction(models.AuditLogInput{
-		UsuarioNombre: "Administrador",
+		UsuarioNombre: usuarioNombre,
 		Accion:        "ACTUALIZAR_ABONO",
 		EntidadTipo:   "abonos",
 		EntidadID:     abono.ID,
@@ -161,8 +171,13 @@ func DeleteAbono(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "message": err.Error()})
 	}
+	usuarioNombre := c.Get("X-User-Name")
+	if usuarioNombre == "" {
+		usuarioNombre = "Administrador"
+	}
+
 	go repository.LogAction(models.AuditLogInput{
-		UsuarioNombre: "Administrador",
+		UsuarioNombre: usuarioNombre,
 		Accion:        "ELIMINAR_ABONO",
 		EntidadTipo:   "abonos",
 		EntidadID:     abonoID,
