@@ -28,7 +28,7 @@ func GetClientesMorosos(parcelaID string) ([]ClienteMoroso, error) {
 			  SELECT MAX(fecha_pago)
 			  FROM abonos a
 			  JOIN periodos_pago pp ON a.periodo_pago_id = pp.id
-			  WHERE pp.plan_id = pl.id
+			  WHERE pp.plan_id = pl.id AND a.fecha_pago <= CURRENT_DATE
 			) as ultimo_abono_fecha
 		FROM periodos_pago p
 		JOIN planes_pago pl ON p.plan_id = pl.id
@@ -38,6 +38,12 @@ func GetClientesMorosos(parcelaID string) ([]ClienteMoroso, error) {
 		  AND p.estado = 'pendiente' 
 		  AND p.fecha_vencimiento < CURRENT_DATE
 		  AND t.estado != 'disponible'
+		  AND (
+			  SELECT COALESCE(SUM(monto_pagado), 0) 
+			  FROM abonos a 
+			  JOIN periodos_pago pp ON a.periodo_pago_id = pp.id 
+			  WHERE pp.plan_id = pl.id
+		  ) < t.precio_lista
 		  AND NOT EXISTS (
 			  SELECT 1 
 			  FROM abonos a
@@ -45,6 +51,14 @@ func GetClientesMorosos(parcelaID string) ([]ClienteMoroso, error) {
 			  WHERE pp.plan_id = pl.id 
 			    AND EXTRACT(MONTH FROM a.fecha_pago) = EXTRACT(MONTH FROM CURRENT_DATE)
 			    AND EXTRACT(YEAR FROM a.fecha_pago) = EXTRACT(YEAR FROM CURRENT_DATE)
+		  )
+		  AND (
+			  SELECT COALESCE(SUM(monto_esperado), 0) FROM periodos_pago WHERE plan_id = pl.id
+		  ) > (
+			  SELECT COALESCE(SUM(monto_pagado), 0) 
+			  FROM abonos a 
+			  JOIN periodos_pago pp ON a.periodo_pago_id = pp.id 
+			  WHERE pp.plan_id = pl.id
 		  )
 		GROUP BY c.id, c.nombre_completo, c.telefono, pl.id, t.id, t.clave
 		ORDER BY dias_retraso DESC

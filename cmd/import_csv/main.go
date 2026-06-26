@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/xuri/excelize/v2"
 
 	"github.com/FerT99/gestor-terrenos-service/internal/database"
 	"github.com/FerT99/gestor-terrenos-service/internal/models"
@@ -16,8 +16,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Configuraciones de columnas (índices basados en 0)
-// AJUSTA ESTOS ÍNDICES SEGÚN TU EXCEL EXPORTADO A CSV
 const (
 	ColCliente      = 2 // Columna C (Cliente)
 	ColClaveTerreno = 1 // Columna B (Número de Lote)
@@ -28,7 +26,6 @@ const (
 )
 
 func main() {
-	// 1. Cargar variables de entorno y conectar a BD
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Println("No se encontró .env, usando variables de entorno del sistema")
@@ -37,36 +34,33 @@ func main() {
 	database.ConnectDB()
 	defer database.DB.Close()
 
-	// Obtener la parcela principal (Ajusta el nombre si es diferente)
 	var parcelaID string
 	err = database.DB.QueryRow(context.Background(), "SELECT id FROM parcelas WHERE nombre = 'Parcela Principal' LIMIT 1").Scan(&parcelaID)
 	if err != nil {
 		log.Fatalf("Error obteniendo parcela: %v", err)
 	}
 
-	// 2. Leer archivo Excel
-	filePath := "datos.xlsx" // Ahora usamos el Excel
-	f, err := excelize.OpenFile(filePath)
+	filePath := "datos.csv"
+	f, err := os.Open(filePath)
 	if err != nil {
 		log.Fatalf("No se pudo abrir el archivo %s: %v", filePath, err)
 	}
 	defer f.Close()
 
-	sheets := f.GetSheetList()
-	if len(sheets) == 0 {
-		log.Fatal("No se encontraron hojas en el Excel")
-	}
-	sheet := sheets[0]
-
-	records, err := f.GetRows(sheet)
+	r := csv.NewReader(f)
+	// Some lines have different number of fields, let's not fail on it
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
 	if err != nil {
-		log.Fatalf("Error leyendo Excel: %v", err)
+		log.Fatalf("Error leyendo CSV: %v", err)
 	}
 
-	// 3. Procesar filas (saltando la cabecera)
 	for i, row := range records {
-		if i == 0 {
+		if i == 0 || i == 1 {
 			continue // Saltar encabezados
+		}
+		if len(row) <= ColCliente {
+			continue
 		}
 
 		clienteNombre := strings.TrimSpace(row[ColCliente])
@@ -74,46 +68,41 @@ func main() {
 			continue
 		}
 
-		// Rellenar la fila con strings vacíos hasta 46 columnas por si excelize omitió celdas vacías
+		// Rellenar la fila con strings vacíos hasta 46 columnas
 		for len(row) < 46 {
 			row = append(row, "")
 		}
 
-		// Parsear datos
-		m2, _ := strconv.ParseFloat(strings.ReplaceAll(row[ColM2], ",", "."), 64)
+		m2Str := strings.ReplaceAll(row[ColM2], ".", "") // if there are thousands separator
+		m2Str = strings.ReplaceAll(m2Str, ",", ".")
+		m2, _ := strconv.ParseFloat(m2Str, 64)
 
-		// Limpiar símbolo de dólar y comas de miles para Valor Total (formato US/MX: 160,000.00)
 		valorStr := strings.ReplaceAll(row[ColValorTotal], "$", "")
 		valorStr = strings.ReplaceAll(valorStr, " ", "")
-		valorStr = strings.ReplaceAll(valorStr, ",", "") // Quitar comas de miles
+		valorStr = strings.ReplaceAll(valorStr, ".", "") // Quitar comas de miles que en español son puntos (160.000,00)
+		valorStr = strings.ReplaceAll(valorStr, ",", ".") // Convertir coma decimal a punto (160000.00)
 		valorTotal, _ := strconv.ParseFloat(strings.TrimSpace(valorStr), 64)
 
-		// Fecha de inicio (Asumiendo formato DD/MM/YY)
 		fechaInicio, err := time.Parse("02/01/06", strings.TrimSpace(row[ColFechaInicio]))
 		if err != nil {
-			log.Printf("Error parseando fecha fila %d: %v", i, err)
 			fechaInicio = time.Now()
 		}
 
-		// A. Crear o buscar Cliente
 		var clienteID string
 		err = database.DB.QueryRow(context.Background(), "SELECT id FROM clientes WHERE nombre_completo = $1 LIMIT 1", clienteNombre).Scan(&clienteID)
 		if err != nil {
-			// Crear cliente
 			nuevoCliente, err := repository.CreateCliente(models.ClienteInput{
 				NombreCompleto: clienteNombre,
 				Estado:         "Activo",
 				ParcelaID:      parcelaID,
 			})
 			if err != nil {
-				log.Printf("Error creando cliente %s: %v", clienteNombre, err)
 				continue
 			}
 			clienteID = nuevoCliente.ID
 		}
 
-		// B. Crear o Buscar Terreno
-		claveTerreno := fmt.Sprintf("LOTE-IMP-%d", i) // Autogenerado por defecto
+		claveTerreno := fmt.Sprintf("LOTE-IMP-%d", i)
 		if len(row) > ColClaveTerreno && row[ColClaveTerreno] != "" {
 			claveTerreno = strings.TrimSpace(row[ColClaveTerreno])
 		}
@@ -123,7 +112,6 @@ func main() {
 		err = database.DB.QueryRow(context.Background(), "SELECT id FROM terrenos WHERE clave = $1 LIMIT 1", claveTerreno).Scan(&terrenoID)
 
 		if err != nil {
-			// No existe, crearlo
 			terreno, err = repository.CreateTerreno(models.TerrenoInput{
 				ParcelaID:    parcelaID,
 				Clave:        claveTerreno,
@@ -135,30 +123,22 @@ func main() {
 				Moneda:       "MXN",
 			})
 			if err != nil {
-				log.Printf("Error creando terreno para %s: %v", clienteNombre, err)
 				continue
 			}
 		} else {
-			// Ya existe, actualizarlo (para corregir si en el intento anterior se guardó mal)
+			// Update ownership just in case
 			_, err = database.DB.Exec(context.Background(), `
 				UPDATE terrenos 
-				SET superficie_m2 = $1, precio_lista = $2, propietario = $3, estado = 'vendido' 
+				SET superficie_m2 = $1, precio_lista = $2, propietario = $3 
 				WHERE id = $4`,
 				m2, valorTotal, clienteNombre, terrenoID)
-			if err != nil {
-				log.Printf("Error actualizando terreno %s: %v", claveTerreno, err)
-				continue
-			}
 			terreno.ID = terrenoID
 		}
 
-		// C. Calcular plazos fijos
-		// Nos indicaron que TODOS los terrenos se dividen entre 40 abonos (plazos = 40)
 		plazos := 40
-
 		maxCol := len(row)
 		if maxCol > 46 {
-			maxCol = 46 // Solo leer hasta Abono 40 (índice 45)
+			maxCol = 46
 		}
 
 		var plan models.PlanPago
@@ -175,17 +155,13 @@ func main() {
 				FechaInicio: fechaInicio,
 			})
 			if err != nil {
-				log.Printf("Error creando plan de pago: %v", err)
 				continue
 			}
 		}
 
-		// D. Registrar Abonos
-		// Obtener la fila de fechas (que siempre está debajo de la fila del cliente)
 		var fechasRow []string
 		if i+1 < len(records) {
 			nextRow := records[i+1]
-			// Confirmamos que es una fila de fechas si el nombre del cliente está vacío
 			if len(nextRow) > ColCliente && strings.TrimSpace(nextRow[ColCliente]) == "" {
 				fechasRow = nextRow
 			}
@@ -200,17 +176,16 @@ func main() {
 				continue
 			}
 
-			// Limpiar formato moneda (US/MX)
 			abonoStr = strings.ReplaceAll(abonoStr, "$", "")
 			abonoStr = strings.ReplaceAll(abonoStr, " ", "")
-			abonoStr = strings.ReplaceAll(abonoStr, ",", "")
+			abonoStr = strings.ReplaceAll(abonoStr, ".", "")
+			abonoStr = strings.ReplaceAll(abonoStr, ",", ".")
 			montoAbono, _ := strconv.ParseFloat(abonoStr, 64)
 
 			if montoAbono > 0 && abonoIndex < len(periodos) {
 				periodoActual := periodos[abonoIndex]
 
-				// Determinar la fecha real del abono (de la fila de abajo)
-				fechaPagoStr := fechaInicio.AddDate(0, abonoIndex, 0).Format("2006-01-02") // Fallback a simulada
+				fechaPagoStr := fechaInicio.AddDate(0, abonoIndex, 0).Format("2006-01-02")
 				if len(fechasRow) > j {
 					fStr := strings.TrimSpace(fechasRow[j])
 					if fStr != "" {
@@ -220,20 +195,9 @@ func main() {
 					}
 				}
 
-				// Solo procesar si la fecha es de Junio o Julio (meses 6 y 7)
-				parsedFecha, _ := time.Parse("2006-01-02", fechaPagoStr)
-				if parsedFecha.Month() != time.June && parsedFecha.Month() != time.July {
-					abonoIndex++
-					continue
-				}
-
-				// El usuario solicitó poner todos los abonos de este excel como Efectivo
 				metodoPago := "Efectivo"
-
-				// Actualizar método de pago si el abono ya existe en la BD
 				database.DB.Exec(context.Background(), "UPDATE abonos SET metodo_pago = $1 WHERE periodo_pago_id = $2", metodoPago, periodoActual.ID)
 
-				// Crear el abono (fallará y no duplicará si ya existe y está pagado)
 				_, err = repository.CreateAbono(parcelaID, models.AbonoInput{
 					PeriodoPagoID: periodoActual.ID,
 					MontoPagado:   montoAbono,
@@ -243,15 +207,12 @@ func main() {
 				})
 
 				if err == nil {
-					// Marcar periodo como pagado
 					database.DB.Exec(context.Background(), "UPDATE periodos_pago SET estado = 'pagado' WHERE id = $1", periodoActual.ID)
 				}
 				abonoIndex++
 			}
 		}
-
-		fmt.Printf("Fila %d procesada con éxito: %s\n", i, clienteNombre)
+		fmt.Printf("Fila %d procesada con éxito: %s (Lote %s)\n", i, clienteNombre, claveTerreno)
 	}
-
-	fmt.Println("Importación finalizada.")
+	fmt.Println("Importación CSV finalizada.")
 }
