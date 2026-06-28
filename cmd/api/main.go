@@ -27,7 +27,7 @@ func main() {
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Parcela-Id, X-User-Id, X-User-Role",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Parcela-Id, X-User-Id, X-User-Role, X-User-Name",
 		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}))
 

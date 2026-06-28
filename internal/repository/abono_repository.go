@@ -160,7 +160,8 @@ func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.tipo_cambio, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
 			COALESCE(t.clave, '') as terreno_clave,
 			COALESCE(t.nombre, '') as terreno_nombre,
-			COALESCE(c.nombre_completo, '') as cliente_nombre
+			COALESCE(c.nombre_completo, '') as cliente_nombre,
+			t.id as terreno_id
 		FROM abonos a
 		LEFT JOIN periodos_pago pp ON a.periodo_pago_id = pp.id
 		LEFT JOIN planes_pago plan ON pp.plan_id = plan.id
@@ -181,7 +182,7 @@ func GetAbonosByPeriodo(periodoID string) ([]models.Abono, error) {
 		if err := rows.Scan(
 			&a.ID, &a.ParcelaID, &a.PeriodoPagoID, &a.NumeroAbono, &a.MontoPagado, 
 			&a.Moneda, &a.TipoCambio, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
-			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre,
+			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre, &a.TerrenoID,
 		); err != nil {
 			return nil, err
 		}
@@ -196,7 +197,8 @@ func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 			a.id, a.parcela_id, a.periodo_pago_id, a.numero_abono, a.monto_pagado, a.moneda, a.tipo_cambio, a.fecha_pago, a.metodo_pago, a.comprobante_url, a.notas, a.created_at,
 			COALESCE(t.clave, '') as terreno_clave,
 			COALESCE(t.nombre, '') as terreno_nombre,
-			COALESCE(c.nombre_completo, '') as cliente_nombre
+			COALESCE(c.nombre_completo, '') as cliente_nombre,
+			t.id as terreno_id
 		FROM abonos a
 		LEFT JOIN periodos_pago pp ON a.periodo_pago_id = pp.id
 		LEFT JOIN planes_pago plan ON pp.plan_id = plan.id
@@ -217,7 +219,7 @@ func GetAllAbonos(parcelaID string) ([]models.Abono, error) {
 		if err := rows.Scan(
 			&a.ID, &a.ParcelaID, &a.PeriodoPagoID, &a.NumeroAbono, &a.MontoPagado, 
 			&a.Moneda, &a.TipoCambio, &a.FechaPago, &a.MetodoPago, &a.ComprobanteURL, &a.Notas, &a.CreatedAt,
-			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre,
+			&a.TerrenoClave, &a.TerrenoNombre, &a.ClienteNombre, &a.TerrenoID,
 		); err != nil {
 			return nil, err
 		}

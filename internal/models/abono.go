@@ -20,6 +20,7 @@ type Abono struct {
 	TerrenoClave    string         `json:"terreno_clave,omitempty"`
 	TerrenoNombre   string         `json:"terreno_nombre,omitempty"`
 	ClienteNombre   string         `json:"cliente_nombre,omitempty"`
+	TerrenoID       *string        `json:"terreno_id,omitempty"`
 }
 
 type AbonoInput struct {
